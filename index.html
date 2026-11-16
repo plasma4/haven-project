@@ -18,6 +18,20 @@
             font: 14px/1.5 monospace;
         }
 
+        body::before {
+            position: fixed;
+            z-index: 1;
+            top: 0;
+            left: 0;
+            width: 420px;
+            height: 320px;
+            background-image: radial-gradient(#90a4b538 1.5px, transparent 2px);
+            background-size: 20px 20px;
+            mask-image: radial-gradient(ellipse at top left, #000 0%, transparent 76%);
+            content: "";
+            pointer-events: none;
+        }
+
         canvas {
             position: fixed;
             inset: 0;
@@ -51,6 +65,20 @@
             bottom: 12px;
             color: #c1ccd5;
             font-size: 11px;
+            pointer-events: none;
+        }
+
+        #spinInfo {
+            position: fixed;
+            z-index: 3;
+            top: 14px;
+            left: 14px;
+            padding: 10px 14px;
+            color: #fff3d6;
+            background: #402000e8;
+            border: 2px solid #ff9b24;
+            box-shadow: 0 0 18px #ff8a3380;
+            font: bold 13px/1.55 monospace;
             pointer-events: none;
         }
 
@@ -109,7 +137,7 @@
             padding: 8px;
             color: #e5e7eb;
             background: #17212b;
-            border: 1px solid #687989;
+            border: 1px solid oklab(76.045% -0.15303 0.10387);
             font: inherit;
             text-align: left;
             cursor: pointer;
@@ -144,10 +172,11 @@
     <canvas></canvas>
     <div id="hud"><img src="/money.png" alt=""><span><b id="currency-value">0</b></span></div>
     <div id="progress"></div>
+    <div id="spinInfo" hidden></div>
     <label id="hitbox-controls">
         <pre id="debug-log"
             aria-live="off">This is RAGEBAIT BOUNCE. try to beat the bugs and bounce back to the initial area to win!</pre>
-        <input id="show-hitboxes" type="checkbox"> Show hitboxes
+        <input id="show-hitboxes" type="checkbox"> Unshow no hitboxes
     </label>
     <section id="shop" hidden>
         <h2>circly upgrades!</h2>
@@ -156,7 +185,7 @@
         <!-- <button data-upgrade="drive" data-label="Drive +20%"></button>
         <button data-upgrade="spring" data-label="Spring +bounce"></button> -->
         <button data-upgrade="payout" data-label="Money reward x2"></button>
-        <p class="muted">(move to the square entrance)</p>
+        <p class="muted">(goog is awaiting)</p>
     </section>
     <img id="reward-image" src="/oooo.jpg" alt="" hidden>
     </section>

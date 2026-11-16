@@ -117,6 +117,12 @@ interface ParticleSpawn {
 }
 const pendingParticleSpawns: ParticleSpawn[] = [];
 const rewardImage = document.getElementById("reward-image") as HTMLImageElement;
+const spinInstructions = document.getElementById("spinInfo")!;
+let rewardFade = 0;
+let returnFlight: { startX: number; startY: number; elapsed: number } | null =
+  null;
+let returnBouncing = false;
+let currentSpinRate = 0;
 function openingIsOpen(item: (typeof MAP)[number]) {
   if (!item.openingAfter) return true;
   const gate = MAP.find((candidate) => candidate.id === item.openingAfter);
@@ -187,13 +193,10 @@ function resolveObstacleCollisions() {
       contactY = face.y;
     }
 
-    const beforeX = cameraX;
-    const beforeY = cameraY;
+    // const beforeX = cameraX;
+    // const beforeY = cameraY;
     cameraX = -(contactX + nx * playerR);
     cameraY = -(contactY + ny * playerR);
-    lastCorrection = Math.hypot(cameraX - beforeX, cameraY - beforeY);
-    lastPhysicsEvent = `obstacle ${obstacle.id ?? ""} bounce`;
-    circleCollisionState = `touching obstacle ${obstacle.id ?? ""}`;
 
     // velX/velY are camera-space (the negative of player motion), so a positive
     // dot product with the outward normal means the player is moving into the box.
@@ -267,13 +270,10 @@ function resolveSlopeCollisions() {
     }
 
     onSlope = true;
-    const beforeX = cameraX;
-    const beforeY = cameraY;
+    // const beforeX = cameraX;
+    // const beforeY = cameraY;
     cameraX = -(contactX + nx * playerR);
     cameraY = -(contactY + ny * playerR);
-    lastCorrection = Math.hypot(cameraX - beforeX, cameraY - beforeY);
-    lastPhysicsEvent = `slope ${slope.id ?? ""} contact`;
-    circleCollisionState = `on slope ${slope.id ?? ""}`;
 
     // Camera-space dot product above zero means moving into the slope.
     const normalSpeed = velX * nx + velY * ny;
@@ -287,21 +287,24 @@ function resolveSlopeCollisions() {
 // Spin room (area 3): while inside and above the target spin rate, hold a
 // direction to push tangentially around the room's center. The spin meter
 // (currentP) fills while spinning fast enough and drains otherwise.
-// Each spin level adds 50% to the push. Level 0 never keeps up with the target,
-// level 1 only sometimes does, and level 2 keeps up, so the ladder needs two purchases.
+// Each spin level adds 50% to the push; the room now requires a much faster spin.
 const spinPushBase = 0.06;
-const spinTargetRadPerSec = 2.2;
+const spinTargetRadPerSec = 6;
 const spinFillPerTick = 1;
 const spinDecayPerTick = 0.5;
 // Returns true while the player is inside an unfinished spin room.
 function updateSpinRoom() {
   const room = MAP.find((item) => item.id === "spin-room");
-  if (!room || room.currentP! >= room.totalP!) return false;
+  if (!room || room.currentP! >= room.totalP!) {
+    currentSpinRate = 0;
+    return false;
+  }
   const [cx, cy, radius] = room.xyr!;
   const rx = -cameraX - cx;
   const ry = -cameraY - cy;
   const distance = Math.hypot(rx, ry);
   if (distance === 0 || distance >= radius) {
+    currentSpinRate = 0;
     room.currentP = Math.max(0, room.currentP! - spinDecayPerTick);
     return false;
   }
@@ -312,26 +315,15 @@ function updateSpinRoom() {
   // Angular speed about the room center, in radians per second.
   const radPerSec =
     (Math.abs(ry * velX - rx * velY) / (distance * distance)) * logicFPS;
+  currentSpinRate = radPerSec;
   if (radPerSec >= spinTargetRadPerSec) {
     room.currentP = Math.min(room.totalP!, room.currentP! + spinFillPerTick);
   } else {
     room.currentP = Math.max(0, room.currentP! - spinDecayPerTick);
   }
-  lastPhysicsEvent = `spinning ${radPerSec.toFixed(2)} rad/s`;
   return true;
 }
-// Entering area 4 reveals the oooo image, once.
-let area4Reached = false;
-function updateAreaFour() {
-  if (area4Reached) return;
-  const area4 = MAP.find((item) => item.id === "area-4");
-  if (!area4 || !itemIsVisible(area4)) return;
-  const [ax, ay, ar] = area4.xyr!;
-  if (Math.hypot(-cameraX - ax, -cameraY - ay) < ar) {
-    area4Reached = true;
-    rewardImage.hidden = false;
-  }
-}
+const returnFlightDuration = 2400;
 function segmentCircleHitTime(
   startX: number,
   startY: number,
@@ -433,14 +425,8 @@ let velX = 0,
   velY = 0,
   cameraX = -spawnCircle.xyr![0],
   cameraY = -spawnCircle.xyr![1],
-  lastPhysicsEvent = "none",
-  lastCorrection = 0,
-  wasJumpHeld = false,
-  circleCollisionState = "idle";
+  wasJumpHeld = false;
 function update() {
-  lastPhysicsEvent = "free movement";
-  lastCorrection = 0;
-  circleCollisionState = "inside rooms";
   const oldPlayerX = -cameraX;
   const oldPlayerY = -cameraY;
   for (let i = particles.length - 1; i >= 0; i--) {
@@ -458,6 +444,28 @@ function update() {
     p.age++;
     if (p.age >= p.frames) orbitParticles.splice(i, 1);
   }
+  if (returnFlight) {
+    returnFlight.elapsed += fixedStep;
+    const progress = Math.min(returnFlight.elapsed / returnFlightDuration, 1);
+    const firstCircle = MAP.find((item) => item.type === "circle")!;
+    const [targetX, targetY] = firstCircle.xyr!;
+    const playerX =
+      returnFlight.startX + (targetX - returnFlight.startX) * progress;
+    const playerY =
+      returnFlight.startY + (targetY - returnFlight.startY) * progress;
+    cameraX = -playerX;
+    cameraY = -playerY;
+    rewardFade = 0.8 * progress;
+    if (progress >= 1) {
+      returnFlight = null;
+      returnBouncing = true;
+      velX = 8;
+      velY = 6;
+    }
+    return;
+  }
+  if (returnBouncing)
+    rewardFade = Math.min(1, rewardFade + fixedStep * (0.2 / 900));
   const inSpinRoom = updateSpinRoom();
   const speed = (8 / logicFPS) * (1 + upgrades.drive * 0.2);
   // Inside the spin room, horizontal input is the spin push instead of a straight push.
@@ -503,11 +511,9 @@ function update() {
   MAP.forEach(function (item) {
     if (item.type === "circle") {
       if (!circleCollisionEnabled(item, -cameraY)) {
-        if (item.visibleAfter) circleCollisionState = "area 2 approach";
         return;
       }
       if (passedCircles.has(item)) {
-        circleCollisionState = "area 1 corridor cleared";
         return;
       }
       const xyr = item.xyr!;
@@ -531,7 +537,6 @@ function update() {
         )
       ) {
         passedCircles.add(item);
-        lastPhysicsEvent = "cleared area 1 into corridor";
         return;
       }
       const inPassage = openings.some((opening, index) => {
@@ -582,7 +587,6 @@ function update() {
             playerY <= opening[1] + opening[3] - playerR,
         )
       ) {
-        circleCollisionState = `passage open in area ${item.visibleAfter ? "2" : "1"}`;
         return;
       }
       // A circle is a solid rim: a player on its inside touches at R-r, while a
@@ -664,13 +668,10 @@ function update() {
               xyr[1] + (resolvedDy / resolvedDistance) * allowedDistance;
           }
         }
-        const beforeX = cameraX;
-        const beforeY = cameraY;
+        // const beforeX = cameraX;
+        // const beforeY = cameraY;
         cameraX = -resolvedX;
         cameraY = -resolvedY;
-        lastCorrection = Math.hypot(cameraX - beforeX, cameraY - beforeY);
-        lastPhysicsEvent = `circle ${onOutside ? "outside" : "inside"} bounce (${item.visibleAfter ? "area 2" : "area 1"})`;
-        circleCollisionState = `${onOutside ? "outside" : "inside"} radius ${distance.toFixed(1)}/${allowedDistance}`;
 
         // reflect only velocity directed into THIS side of the rim!
         const normalSpeed = velX * nx + velY * ny;
@@ -733,7 +734,6 @@ function update() {
 
   resolveObstacleCollisions();
   resolveSlopeCollisions();
-  updateAreaFour();
 
   // rectangle marks corridor walls
   const playerY = -cameraY;
@@ -758,17 +758,11 @@ function update() {
       const minY = y + playerR;
       const maxY = y + height - playerR;
       if (playerY < minY && oldPlayerY >= minY) {
-        const before = cameraY;
         cameraY = -minY;
-        lastCorrection = Math.abs(cameraY - before);
         velY = -Math.abs(velY) * baseBounce;
-        lastPhysicsEvent = "corridor ceiling bounce";
       } else if (playerY > maxY && oldPlayerY <= maxY) {
-        const before = cameraY;
         cameraY = -maxY;
-        lastCorrection = Math.abs(cameraY - before);
         velY = Math.abs(velY) * baseBounce;
-        lastPhysicsEvent = "corridor floor bounce";
       }
     } else {
       if (
@@ -779,22 +773,32 @@ function update() {
       const minX = x + playerR;
       const maxX = x + width - playerR;
       if (playerX < minX && oldPlayerX >= minX) {
-        const before = cameraX;
         cameraX = -minX;
-        lastCorrection = Math.abs(cameraX - before);
         velX = -Math.abs(velX) * 0.6;
         velY = Math.max(velY, shaftVerticalBoost);
-        lastPhysicsEvent = "corridor left wall bounce";
       } else if (playerX > maxX && oldPlayerX <= maxX) {
-        const before = cameraX;
         cameraX = -maxX;
-        lastCorrection = Math.abs(cameraX - before);
         velX = Math.abs(velX) * 0.6;
         velY = Math.max(velY, shaftVerticalBoost);
-        lastPhysicsEvent = "corridor right wall bounce";
       }
     }
   });
+
+  const ladder = MAP.find((item) => item.id === "ladder");
+  if (ladder && gateIsDestroyed("spin-room") && velY > 0) {
+    const [ladderX, ladderY, ladderWidth, ladderHeight] = ladder.xywh!;
+    const playerX = -cameraX;
+    const playerY = -cameraY;
+    if (
+      playerX >= ladderX - playerR &&
+      playerX <= ladderX + ladderWidth + playerR &&
+      playerY >= ladderY + ladderHeight + playerR
+    ) {
+      returnFlight = { startX: playerX, startY: playerY, elapsed: 0 };
+      velX = 0;
+      velY = 0;
+    }
+  }
 
   // if the player is really far reset
   if (cameraX * cameraX + cameraY * cameraY >= 2000000) cameraY = cameraX = 0;
@@ -829,7 +833,8 @@ const showHitboxes = document.getElementById(
 const upgradeCosts = { drive: 20, spring: 30, payout: 40, spin: 25 };
 
 function upgradeCost(name: keyof typeof upgrades) {
-  if (name === "payout") return Math.ceil(upgradeCosts.payout * 2.4 ** upgrades.payout);
+  if (name === "payout")
+    return Math.ceil(upgradeCosts.payout * 2.4 ** upgrades.payout);
   return upgradeCosts[name] * (upgrades[name] + 1);
 }
 
@@ -841,7 +846,7 @@ function refreshShop() {
       const cost = upgradeCost(name);
       button.disabled = currency < cost;
       const label = button.dataset.label;
-      button.textContent = `${label} (Lv ${upgrades[name]}) — ${cost}`;
+      button.textContent = `${label} (Lv ${upgrades[name]}): costs ${cost} mone${cost % 2 == 0 ? "h" : "y"}`;
     });
   currencyValue.textContent = String(currency);
 }
@@ -899,6 +904,26 @@ function draw(delta: number) {
   while (accum >= fixedStep) {
     accum -= fixedStep;
     update();
+  }
+
+  if (rewardFade > 0 && rewardImage.complete && rewardImage.naturalWidth > 0) {
+    ctx.save();
+    ctx.resetTransform();
+    ctx.globalAlpha = rewardFade;
+    const scale = Math.min(
+      w / rewardImage.naturalWidth,
+      h / rewardImage.naturalHeight,
+    );
+    const imageWidth = rewardImage.naturalWidth * scale;
+    const imageHeight = rewardImage.naturalHeight * scale;
+    ctx.drawImage(
+      rewardImage,
+      (w - imageWidth) / 2,
+      (h - imageHeight) / 2,
+      imageWidth,
+      imageHeight,
+    );
+    ctx.restore();
   }
 
   ctx.save();
@@ -1118,6 +1143,19 @@ function draw(delta: number) {
     text += `spin ${Math.round((100 * spinRoom.currentP!) / spinRoom.totalP!)}%<br>`;
   }
   progressPanel.innerHTML = text;
+  const spinRoomCenter = spinRoom?.xyr;
+  const nearSpinRoom = spinRoomCenter
+    ? Math.hypot(-cameraX - spinRoomCenter[0], -cameraY - spinRoomCenter[1]) <
+      spinRoomCenter[2] + 32
+    : false;
+  spinInstructions.hidden =
+    !nearSpinRoom || !spinRoom || spinRoom.currentP! >= spinRoom.totalP!;
+  if (!spinInstructions.hidden) {
+    spinInstructions.innerHTML =
+      `<strong>SPIN TO OPEN THE LADDER!!!!!</strong><br>` +
+      `goog says you really want a continuous ${spinTargetRadPerSec.toFixed(1)} rad/s<br>` +
+      `Current googs: ${currentSpinRate.toFixed(1)} rad/s`;
+  }
   updateShopVisibility(-cameraX, -cameraY);
   refreshShop();
 
@@ -1143,3 +1181,5 @@ function draw(delta: number) {
 }
 
 draw(0);
+
+fill();

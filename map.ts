@@ -47,6 +47,14 @@ export const MAP: Shape[] = [
     totalP: 0,
   },
   {
+    type: "obstacle",
+    id: "lower-gate",
+    lch: [0.7, 0.25, 100],
+    xywh: [-10, 45, 20, 40],
+    currentP: 0,
+    totalP: 20,
+  },
+  {
     type: "rect",
     lch: [0.7, 0.25, 200],
     xywh: [-10, 55, 20, 88],
@@ -66,7 +74,7 @@ export const MAP: Shape[] = [
     lch: [0.7, 0.25, 100],
     xywh: [-250, 310, 20, 1000],
     currentP: 0,
-    totalP: 1,
+    totalP: 123.45,
   },
   {
     type: "rect",
